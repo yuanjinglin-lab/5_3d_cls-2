@@ -20,10 +20,10 @@ class MyDataset(Dataset):
         pkl_path = self.file_list[index]
         pkl_name = os.path.basename(pkl_path)
 
-        if  "normal" in pkl_name:
-            label = 0
-        elif "abnormal" in pkl_name:
+        if  "abnormal" in pkl_name:
             label = 1
+        elif "normal" in pkl_name:
+            label = 0
         else:
             raise ValueError("pkl_name error")
         label = torch.tensor(label)
