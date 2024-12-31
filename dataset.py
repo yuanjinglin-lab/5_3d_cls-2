@@ -42,9 +42,7 @@ class MyDataset(Dataset):
         _, _, T, H, W = data.shape
         data = data.reshape(4 * 3, T, H, W)
         # data, pkl_name = self.total_data_list[self.data_idx[idx]]
-        
-
-        return data.float(), label.long()
+        return data.float(), label.float()
 
 
 def random_flip(data):

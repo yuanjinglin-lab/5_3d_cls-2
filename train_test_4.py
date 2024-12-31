@@ -99,11 +99,11 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, exp_lr_sched
         "f1": [],
         "auc": []
     }
-
+    criterion = nn.BCELoss()
     for epoch in range(num_epochs):
         # 打印当前学习率
-        for param_group in optimizer.param_groups:
-            print("LR", param_group['lr'])
+        # for param_group in optimizer.param_groups:
+        #     print("LR", param_group['lr'])
 
         model.train()  # 设置模型为训练模式
 
@@ -123,18 +123,10 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, exp_lr_sched
 
             # 前向传播
             output = model(data)
-            loss = F.cross_entropy(output, label)
-
-            with torch.no_grad():
-                predict = output.argmax(dim=1)
-                num_correct = torch.eq(predict, label).sum().float().item()
-
-                label_list.append(label.detach())
-                predict_list.append(predict.detach())
-
-            metrics['loss'] += loss.data.cpu().item()
-            metrics['num_correct'] += num_correct
-            metrics['num_total'] += data.shape[0]
+            
+            loss = criterion(output[:,0], label)
+            loss_record = loss.data.cpu().item()
+            metrics['loss'] += loss_record
 
             optimizer.zero_grad()
             loss.backward()
@@ -142,34 +134,17 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, exp_lr_sched
 
             # 更新进度条
             epoch_samples += 1
-            train_bar.set_postfix({
-                "Loss": f"{metrics['loss'] / epoch_samples:.4f}",
-                "ACC": f"{metrics['num_correct'] / metrics['num_total']:.4f}"
-            })
+            train_bar.set_postfix({"Loss": f"{loss_record:.4f}"})
 
         if (epoch + 1) % 10 == 0:
             os.makedirs(save_dir, exist_ok=True)
             torch.save(model.state_dict(), os.path.join(save_dir, f"epoch_{epoch + 1}.pth"))
 
-        label_list = torch.cat(label_list, dim=0)
-        predict_list = torch.cat(predict_list, dim=0)
-
-        cm = confusion_matrix(label_list.cpu().numpy(), predict_list.cpu().numpy())
-        precision = precision_score(label_list.cpu().numpy(), predict_list.cpu().numpy(), average="macro")
-        recall = recall_score(label_list.cpu().numpy(), predict_list.cpu().numpy(), average="macro")
-        f1 = f1_score(label_list.cpu().numpy(), predict_list.cpu().numpy(), average="macro")
-        print("Confusion Matrix:")
-        print(cm)
-        print(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1 Score: {f1:.4f}")
-
         train_loss = metrics['loss'] / epoch_samples
-        train_acc = metrics['num_correct'] / metrics['num_total']
-        results["train_acc"].append(train_acc)
         results["train_loss"].append(train_loss)
 
         exp_lr_scheduler.step()
 
-        # 验证阶段
         model.eval()  # 设置模型为评估模式
 
         metrics = defaultdict(float)
@@ -189,14 +164,15 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, exp_lr_sched
             # 前向传播
             with torch.no_grad():
                 output = model(data)
-                loss = F.cross_entropy(output, label)
+                loss = criterion(output[:,0], label)
 
                 predict = output.argmax(dim=1)
                 num_correct = torch.eq(predict, label).sum().float().item()
 
                 label_list.append(label.detach())
                 predict_list.append(predict.detach())
-                scores_list.append(torch.softmax(output, dim=1)[:, 1])  # 假设是二分类
+                scores_list.append(output)  # 假设是二分类
+                # scores_list.append(torch.softmax(output, dim=1)[:, 1])  # 假设是二分类
 
             metrics['loss'] += loss.data.cpu().item()
             metrics['num_correct'] += num_correct
@@ -280,43 +256,42 @@ def train_model(model, train_dataloader, val_dataloader, optimizer, exp_lr_sched
             plt.savefig(os.path.join(save_dir, "auc.png"))
             plt.close()
 
-    # 绘制准确率和损失曲线
-    train_acc_np = np.array(results["train_acc"])
-    train_loss_np = np.array(results["train_loss"])
-    val_acc_np = np.array(results["val_acc"])
-    val_loss_np = np.array(results["val_loss"])
-    auc_np = np.array(results["auc"])
-    precision_np = np.array(results["precision"])
-    recall_np = np.array(results["recall"])
-    f1_np = np.array(results["f1"])
-    epochs_range = np.arange(1, num_epochs + 1)
+        # train_acc_np = np.array(results["train_acc"])
+        # train_loss_np = np.array(results["train_loss"])
+        # val_acc_np = np.array(results["val_acc"])
+        # val_loss_np = np.array(results["val_loss"])
+        # auc_np = np.array(results["auc"])
+        # precision_np = np.array(results["precision"])
+        # recall_np = np.array(results["recall"])
+        # f1_np = np.array(results["f1"])
+        # epochs_range = np.arange(1, num_epochs + 1)
 
-    plt.figure()
-    plt.plot(epochs_range, train_acc_np, label="Train Accuracy")
-    plt.plot(epochs_range, val_acc_np, label="Validation Accuracy")
-    plt.xlabel("Epoch")
-    plt.ylabel("Accuracy")
-    plt.ylim(0, 1)
-    plt.title('Accuracy Over Epochs')
-    plt.legend()
-    plt.savefig(os.path.join(save_dir, "accuracy.png"))
-    plt.close()
+        # plt.figure()
+        # plt.plot(epochs_range, train_acc_np, label="Train Accuracy")
+        # plt.plot(epochs_range, val_acc_np, label="Validation Accuracy")
+        # plt.xlabel("Epoch")
+        # plt.ylabel("Accuracy")
+        # plt.ylim(0, 1)
+        # plt.title('Accuracy Over Epochs')
+        # plt.legend()
+        # plt.savefig(os.path.join(save_dir, "accuracy.png"))
+        # plt.close()
 
-    plt.figure()
-    plt.plot(epochs_range, train_loss_np, label="Train Loss")
-    plt.plot(epochs_range, val_loss_np, label="Validation Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.ylim(0, max(max(train_loss_np), max(val_loss_np)) + 0.5)
-    plt.title('Loss Over Epochs')
-    plt.legend()
-    plt.savefig(os.path.join(save_dir, "loss.png"))
-    plt.close()
+        # plt.figure()
+        # plt.plot(epochs_range, train_loss_np, label="Train Loss")
+        # plt.plot(epochs_range, val_loss_np, label="Validation Loss")
+        # plt.xlabel("Epoch")
+        # plt.ylabel("Loss")
+        # plt.ylim(0, max(max(train_loss_np), max(val_loss_np)) + 0.5)
+        # plt.title('Loss Over Epochs')
+        # plt.legend()
+        # plt.savefig(os.path.join(save_dir, "loss.png"))
+        # plt.close()
 
-    # 保存所有指标
-    with open(os.path.join(save_dir, "metrics_all.txt"), "w") as f:
-        for j in range(len(train_acc_np)):
-            f.write(f"{results['train_acc'][j]:.4f}, {results['train_loss'][j]:.4f}, {results['val_acc'][j]:.4f}, {results['val_loss'][j]:.4f}, {results['precision'][j]:.4f}, {results['recall'][j]:.4f}, {results['f1'][j]:.4f}, {results['auc'][j]:.4f}\n")
+        # # 保存所有指标
+        # with open(os.path.join(save_dir, "metrics_all.txt"), "w") as f:
+        #     for j in range(len(train_acc_np)):
+        #         f.write(f"{results['train_acc'][j]:.4f}, {results['train_loss'][j]:.4f}, {results['val_acc'][j]:.4f}, {results['val_loss'][j]:.4f}, {results['precision'][j]:.4f}, {results['recall'][j]:.4f}, {results['f1'][j]:.4f}, {results['auc'][j]:.4f}\n")
 
     # 返回最佳准确率和所有指标
     return best_acc, results
@@ -329,28 +304,7 @@ if __name__ == "__main__":
 
     # 标记的这段放在预处理那里，用来生个每折的数据json
     # -------------------------------------------------------------------------------
-    # data_root_path = Path('./data')
-    # data_path = data_root_path / 'pkl'
     
-    # all_data_list = list(data_path.glob('*.pkl'))
-    
-    # kf = KFold(n_splits=3, shuffle=True, random_state=3047)
-    
-    # split_data = {}
-    # for fold_index, (train_index, validation_index) in enumerate(kf.split(all_data_list)):
-    #     train_set = [str(all_data_list[i].absolute()) for i in train_index]
-    #     validation_set = [str(all_data_list[i]) for i in validation_index]
-        
-    #     dict_name = f'fold_{fold_index}'
-    #     # 将当前折的数据保存到字典中
-    #     split_data[dict_name] = {
-    #             'train': train_set,
-    #             'validation': validation_set
-    #     }
-        
-    # with open('split_result.json', 'w') as file:
-    #     json.dump(split_data, file, indent=4)
-    # print("Data has been successfully split and written to 'split_result.json'.")
     # -----------------------------------------------------------------------
     
     with open('split_result.json', 'r') as file:
@@ -379,11 +333,11 @@ if __name__ == "__main__":
         print(f"Train subset size: {len(train_set)}, Val subset size: {len(valid_set)}")
 
         # 创建 DataLoader，调整 batch_size 为 16
-        train_dataloader = DataLoader(train_set, batch_size=1, shuffle=True, num_workers=4, drop_last=True)
-        val_dataloader = DataLoader(valid_set, batch_size=1 , shuffle=False, num_workers=4, drop_last=True)
+        train_dataloader = DataLoader(train_set, batch_size=20, shuffle=True, num_workers=4, drop_last=True)
+        val_dataloader = DataLoader(valid_set, batch_size=8 , shuffle=False, num_workers=4, drop_last=True)
 
         # 为每个折叠初始化新的模型
-        model = Model(ndims=2, c_in=12, c_enc=[64, 128, 256], k_enc=[7, 3, 3],s_enc=[1, 2, 2], nres_enc=6, norm="InstanceNorm", num_classes=2)
+        model = Model(ndims=2, c_in=12, c_enc=[64, 128, 256], k_enc=[7, 3, 3],s_enc=[1, 2, 2], nres_enc=6, norm="InstanceNorm", num_classes=1)
         model = model.to(device)
 
         # 初始化优化器和调度器

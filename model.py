@@ -31,7 +31,7 @@ class Resnet18(nn.Module):
 class Model(nn.Module):
 
     def __init__(self, ndims=2, c_in=2, c_enc=[64, 128, 256], k_enc=[7, 3, 3], 
-            s_enc=[1, 2, 2], nres_enc=6, norm="InstanceNorm", num_classes=2):
+            s_enc=[1, 2, 2], nres_enc=6, norm="InstanceNorm", num_classes=1):
         super(Model, self).__init__()
         self.ndims = ndims
         self.c_in = c_in
@@ -39,7 +39,6 @@ class Model(nn.Module):
         self.k_enc = k_enc
         self.s_enc = s_enc
         self.nres_enc = nres_enc
-
         # self.encoder = Encoder(ndims=ndims, c_in=c_in, c_enc=c_enc, 
         #     k_enc=k_enc, s_enc=s_enc, nres_enc=nres_enc, norm=norm)
         self.encoder = Resnet18(in_channel=c_in)
@@ -62,6 +61,7 @@ class Model(nn.Module):
             nn.ReLU(),
             # nn.Dropout(0.2),
             nn.Linear(512, num_classes),
+            nn.Sigmoid()
         )
 
     def forward(self, input):
@@ -76,7 +76,7 @@ class Model(nn.Module):
         x = torch.mean(x, dim=1)
         x = torch.flatten(x, start_dim=1)
         out = self.fc(x)
-
+        
         return out
 
 
