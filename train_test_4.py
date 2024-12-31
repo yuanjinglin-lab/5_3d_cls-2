@@ -19,6 +19,9 @@ import seaborn as sns
 from model import Model
 from dataset import MyDataset
 
+import json
+from pathlib import Path
+from sklearn.model_selection import KFold
 
 def seed_torch(seed=1029):
     random.seed(seed)
@@ -324,37 +327,36 @@ if __name__ == "__main__":
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # 加载训练集和验证集
-    train_set = MyDataset(data_root="data/pkl", phase="train")
-    valid_set = MyDataset(data_root="data/pkl", phase="val")
-
-    # 合并训练集和验证集
-    full_dataset = ConcatDataset([train_set, valid_set])
-
-    # 检查数据集的长度
-    print(f"Full dataset size: {len(full_dataset)}")
-
-    # 如果数据集为空，终止程序
-    if len(full_dataset) == 0:
-        print("Full dataset is empty. Please check the data loading process.")
-        exit(1)
-
-    # 提取所有标签以用于 StratifiedKFold
-    labels = []
-    for _, label in full_dataset:
-        labels.append(label)
-    labels = np.array(labels)
-
-    print(f"Labels array shape: {labels.shape}")
-
-    # 确保有足够的数据进行交叉验证
-    if len(labels) < 3:
-        print("Not enough samples for 3-fold cross-validation. Need at least 3 samples.")
-        exit(1)
-
-    # 定义分层 K 折交叉验证
+    # 标记的这段放在预处理那里，用来生个每折的数据json
+    # -------------------------------------------------------------------------------
+    # data_root_path = Path('./data')
+    # data_path = data_root_path / 'pkl'
+    
+    # all_data_list = list(data_path.glob('*.pkl'))
+    
+    # kf = KFold(n_splits=3, shuffle=True, random_state=3047)
+    
+    # split_data = {}
+    # for fold_index, (train_index, validation_index) in enumerate(kf.split(all_data_list)):
+    #     train_set = [str(all_data_list[i].absolute()) for i in train_index]
+    #     validation_set = [str(all_data_list[i]) for i in validation_index]
+        
+    #     dict_name = f'fold_{fold_index}'
+    #     # 将当前折的数据保存到字典中
+    #     split_data[dict_name] = {
+    #             'train': train_set,
+    #             'validation': validation_set
+    #     }
+        
+    # with open('split_result.json', 'w') as file:
+    #     json.dump(split_data, file, indent=4)
+    # print("Data has been successfully split and written to 'split_result.json'.")
+    # -----------------------------------------------------------------------
+    
+    with open('split_result.json', 'r') as file:
+        data_dict = json.load(file)
+    
     n_splits = 3
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=3047)
 
     # 初始化存储跨折叠的指标
     cv_results = {
@@ -365,23 +367,23 @@ if __name__ == "__main__":
         "auc": []
     }
 
-    for fold, (train_idx, val_idx) in enumerate(skf.split(np.zeros(len(labels)), labels)):
+    for fold in range(n_splits):
+        fold_data_dict = data_dict[f'fold_{fold}']
         print(f"\n===== Fold {fold + 1} / {n_splits} =====")
-
+        
         # 创建训练和验证子集
-        train_subset = Subset(full_dataset, train_idx)
-        val_subset = Subset(full_dataset, val_idx)
+        train_set = MyDataset(fold_data_dict['train'], is_train=True)
+        valid_set = MyDataset(fold_data_dict['validation'], is_train=False)
 
         # 检查子集的长度
-        print(f"Train subset size: {len(train_subset)}, Val subset size: {len(val_subset)}")
+        print(f"Train subset size: {len(train_set)}, Val subset size: {len(valid_set)}")
 
         # 创建 DataLoader，调整 batch_size 为 16
-        train_dataloader = DataLoader(train_subset, batch_size=16, shuffle=True, num_workers=4, drop_last=True)
-        val_dataloader = DataLoader(val_subset, batch_size=16, shuffle=False, num_workers=4, drop_last=True)
+        train_dataloader = DataLoader(train_set, batch_size=1, shuffle=True, num_workers=4, drop_last=True)
+        val_dataloader = DataLoader(valid_set, batch_size=1 , shuffle=False, num_workers=4, drop_last=True)
 
         # 为每个折叠初始化新的模型
-        model = Model(ndims=2, c_in=12, c_enc=[64, 128, 256], k_enc=[7, 3, 3],
-                      s_enc=[1, 2, 2], nres_enc=6, norm="InstanceNorm", num_classes=2)
+        model = Model(ndims=2, c_in=12, c_enc=[64, 128, 256], k_enc=[7, 3, 3],s_enc=[1, 2, 2], nres_enc=6, norm="InstanceNorm", num_classes=2)
         model = model.to(device)
 
         # 初始化优化器和调度器
@@ -393,8 +395,7 @@ if __name__ == "__main__":
         os.makedirs(save_dir, exist_ok=True)
 
         # 训练模型，并获取最佳准确率和指标
-        best_acc, results = train_model(model, train_dataloader, val_dataloader, optimizer_ft, exp_lr_scheduler,
-                                       num_epochs=30, save_dir=save_dir)
+        best_acc, results = train_model(model, train_dataloader, val_dataloader, optimizer_ft, exp_lr_scheduler,num_epochs=30, save_dir=save_dir)
 
         # 记录跨折叠的指标
         cv_results["best_acc"].append(best_acc)

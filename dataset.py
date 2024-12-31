@@ -6,65 +6,43 @@ import pickle
 import torch.nn.functional as F
 from tqdm import tqdm
 
-
 class MyDataset(Dataset):
 
-    def __init__(self, data_root="data/pkl", phase="train"):
-
-        self.data_root = data_root
-        self.total_data_list = []
-        self.label_list = []
-
-        for pkl_name in tqdm(sorted(os.listdir(data_root))):
-            self.total_data_list.append(pkl_name)
-
-            # pkl_path = os.path.join(self.data_root, pkl_name)
-            # with open(pkl_path, 'rb') as f:
-            #     data = pickle.load(f)
-            # data = torch.tensor(data) / 255.0
-            # data = data.permute(0, 4, 1, 2, 3)
-            # _, _, D, H, W = data.shape
-            # data = data.reshape(4 * 3, D, H, W)
-            # self.total_data_list.append((data, pkl_name))
-
-        total_num = len(self.total_data_list)
-        total_idx = np.arange(0, total_num)
-        np.random.seed(2022)
-        np.random.shuffle(total_idx)
-
-        self.data_idx = []
-        if phase == "train":
-            self.data_idx = total_idx[:int(total_num * 0.7)]
-        elif phase == "val":
-            self.data_idx = total_idx[int(total_num * 0.7): int(total_num * 1.0)]
+    def __init__(self, file_list, is_train=True):
+        self.file_list = file_list
+        self.phase = "train" if is_train else "validation"
 
     def __len__(self):
-        return len(self.data_idx)
+        return len(self.file_list)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, index):
+        
+        pkl_path = self.file_list[index]
+        pkl_name = os.path.basename(pkl_path)
 
-        pkl_name = self.total_data_list[self.data_idx[idx]]
-        pkl_path = os.path.join(self.data_root, pkl_name)
+        if  "normal" in pkl_name:
+            label = 0
+        elif "abnormal" in pkl_name:
+            label = 1
+        else:
+            raise ValueError("pkl_name error")
+        label = torch.tensor(label)
+        
         with open(pkl_path, 'rb') as f:
             data = pickle.load(f)
 
         data = torch.tensor(data) / 255.0
         data = data.permute(0, 4, 1, 2, 3)
 
-        data = random_noise(data)
-        data = random_crop_resize(data)
-        data = random_flip(data)
-
+        if self.phase == "train":
+            data = random_noise(data)
+            data = random_crop_resize(data)
+            data = random_flip(data)
+            
         _, _, T, H, W = data.shape
         data = data.reshape(4 * 3, T, H, W)
         # data, pkl_name = self.total_data_list[self.data_idx[idx]]
-
-        label = pkl_name.split(".")[0].split("_")[-1]
-        if label == "normal":
-            label = 0
-        elif label == "abnormal":
-            label = 1
-        label = torch.tensor(label)
+        
 
         return data.float(), label.long()
 
@@ -82,22 +60,21 @@ def random_flip(data):
 
     return data
 
-
-def random_crop_resize(data):
+def random_crop_resize(data,rate=0.3):
     shape = data.shape[2:]
     crop_flag = torch.rand(1)
     if crop_flag < 0.3:
-        x1 = np.random.randint(low=1, high=3)
-        y1 = np.random.randint(low=1, high=10)
-        z1 = np.random.randint(low=1, high=5)
-        x2 = np.random.randint(low=1, high=3)
-        y2 = np.random.randint(low=1, high=10)
-        z2 = np.random.randint(low=1, high=5)
+        x1 = np.random.randint(low=1, high=shape[0] * rate)
+        x2 = np.random.randint(low=1, high=shape[0] * rate)
+        
+        y1 = np.random.randint(low=1, high=shape[1] * rate)
+        z1 = np.random.randint(low=1, high=shape[1] * rate)
+        y2 = np.random.randint(low=1, high=shape[2] * rate)
+        z2 = np.random.randint(low=1, high=shape[2] * rate)
         data = data[:, :, x1:-x2, y1:-y2, z1:-z2]
         data = F.interpolate(data, shape)
 
     return data
-
 
 def random_noise(data):
     noise_flag = torch.rand(1)
